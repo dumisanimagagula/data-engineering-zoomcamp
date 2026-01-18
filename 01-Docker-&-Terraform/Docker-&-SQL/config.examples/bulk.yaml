@@ -1,0 +1,22 @@
+# Bulk Loading Configuration
+# Optimized for one-time historical bulk imports
+
+data_source:
+  year: 2020
+  month: 1
+  base_url: "https://d37ci6vzurychx.cloudfront.net/trip-data"
+  taxi_type: yellow
+
+database:
+  connection_string: "postgresql://root:root@localhost:5432/ny_taxi"
+  table_name: "yellow_tripdata_historical"
+
+ingestion:
+  chunk_size: 1000000      # Very large chunks for bulk import
+  n_jobs: 1
+  drop_existing: true      # Start fresh
+  if_exists: "replace"
+
+logging:
+  level: "INFO"
+  file: "logs/bulk_load.log"

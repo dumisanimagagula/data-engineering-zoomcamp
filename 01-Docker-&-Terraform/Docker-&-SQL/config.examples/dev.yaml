@@ -1,0 +1,28 @@
+# Development Configuration
+# Use this locally for testing with small data chunks
+
+data_source:
+  year: 2021
+  month: 1
+  base_url: "https://d37ci6vzurychx.cloudfront.net/trip-data"
+  taxi_type: yellow
+
+database:
+  # Host options:
+  # - Local Python run (outside Docker):
+  #     postgresql://root:root@localhost:5432/ny_taxi
+  # - Docker Compose run (inside `ingestor` service):
+  #     postgresql://root:root@pgdatabase:5432/ny_taxi
+  # Choose the appropriate host based on how you run.
+  connection_string: "postgresql://root:root@localhost:5432/ny_taxi"
+  table_name: "yellow_tripdata_dev"
+
+ingestion:
+  chunk_size: 50000        # Small for testing
+  n_jobs: 1
+  drop_existing: true      # Fresh start each time
+  if_exists: "replace"
+
+logging:
+  level: "DEBUG"           # Verbose for development
+  file: "logs/dev.log"

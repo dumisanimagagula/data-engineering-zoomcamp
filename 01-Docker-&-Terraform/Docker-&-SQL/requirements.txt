@@ -1,0 +1,30 @@
+# NYC Taxi Data Ingestion Requirements
+# Optimized for high-performance bulk loading
+
+# Fast data manipulation
+polars==1.17.1
+
+# Keep pandas for compatibility (if needed)
+pandas==2.3.3
+
+# Parquet support (used by both polars and pandas)
+pyarrow==15.0.0
+
+# Configuration
+pyyaml==6.0.1
+
+# CLI framework
+click==8.1.7
+
+# Schema validation
+pydantic==2.8.2
+
+# Database
+sqlalchemy==2.0.45
+psycopg2-binary==2.9.11
+
+# Progress bar
+tqdm==4.67.1
+
+# Testing
+pytest==8.3.3

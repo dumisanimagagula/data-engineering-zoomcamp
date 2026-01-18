@@ -1,0 +1,67 @@
+services:
+  pgdatabase:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: "root"
+      POSTGRES_PASSWORD: "root"
+      POSTGRES_DB: "ny_taxi"
+    volumes:
+      - "ny_taxi_postgres_data:/var/lib/postgresql"
+    ports:
+      - "5432:5432"
+    # Performance tuning for bulk loads
+    command:
+      - "postgres"
+      - "-c"
+      - "work_mem=256MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "shared_buffers=1GB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "root"
+    volumes:
+      - "pgadmin_data:/var/lib/pgadmin"
+      - "./pgadmin/servers.json:/pgadmin4/servers.json:ro"
+    ports:
+      - "8085:80"
+
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /code
+    volumes:
+      - .:/code
+    depends_on:
+      pgdatabase:
+        condition: service_healthy
+    environment:
+      PG_USER: "root"
+      PG_PASSWORD: "root"
+      PG_HOST: "pgdatabase"
+      PG_PORT: "5432"
+      PG_DB: "ny_taxi"
+    command: >
+      sh -lc "python ingest_nyc_taxi_data.py --config $${CONFIG_PATH:-config.yaml}"
+
+
+
+volumes:
+  ny_taxi_postgres_data:
+  pgadmin_data:
