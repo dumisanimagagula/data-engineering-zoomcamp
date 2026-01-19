@@ -454,6 +454,12 @@ def insert_chunk_to_database_copy(df_chunk: pl.DataFrame, connection_string: str
                 # Create table from Polars DataFrame schema
                 create_table_from_polars(cursor, table_name, df_chunk)
                 logger.info(f"Ensured table '{table_name}' exists")
+                
+                # Fix datetime columns if they were created as TEXT
+                conn.commit()  # Commit table creation first
+                from sqlalchemy import create_engine as sa_create_engine
+                engine = sa_create_engine(connection_string)
+                fix_datetime_columns(engine, table_name)
             
             # Convert Polars to pandas for CSV export (Polars doesn't have write_csv to StringIO yet)
             pdf = df_chunk.to_pandas()
@@ -518,6 +524,42 @@ def create_table_from_polars(cursor, table_name: str, df: pl.DataFrame) -> None:
     cursor.execute(create_stmt)
 
 
+def fix_datetime_columns(engine: Engine, table_name: str) -> None:
+    """
+    Fix datetime columns that were created as TEXT type and convert them to TIMESTAMP.
+    This handles cases where SQLAlchemy's type inference creates wrong types.
+    
+    Args:
+        engine: SQLAlchemy engine
+        table_name: Target table name
+    """
+    datetime_columns = ['tpep_pickup_datetime', 'tpep_dropoff_datetime']
+    
+    try:
+        with engine.begin() as conn:
+            for col_name in datetime_columns:
+                try:
+                    # Check if the column exists and is of TEXT type
+                    check_query = text(f"""
+                        SELECT data_type FROM information_schema.columns
+                        WHERE table_name = :table_name AND column_name = :col_name
+                    """)
+                    result = conn.execute(check_query, {"table_name": table_name, "col_name": col_name}).fetchone()
+                    
+                    if result and result[0] == 'text':
+                        logger.info(f"Converting {col_name} from TEXT to TIMESTAMP...")
+                        alter_query = text(f"""
+                            ALTER TABLE {table_name}
+                            ALTER COLUMN {col_name} TYPE timestamp USING {col_name}::timestamp
+                        """)
+                        conn.execute(alter_query)
+                        logger.info(f"Successfully converted {col_name} to TIMESTAMP")
+                except Exception as col_error:
+                    logger.warning(f"Could not check/fix {col_name}: {col_error}")
+    except Exception as e:
+        logger.warning(f"Could not fix datetime columns: {e}")
+
+
 def insert_chunk_to_database(df_chunk: pd.DataFrame, engine: Engine, table_name: str, 
                              is_first_chunk: bool, chunk_count: int) -> bool:
     """
@@ -540,7 +582,10 @@ def insert_chunk_to_database(df_chunk: pd.DataFrame, engine: Engine, table_name:
         if is_first_chunk:
             # Create table if it does not exist without dropping existing data
             df_chunk.head(0).to_sql(name=table_name, con=engine, if_exists='append', index=False)
-            logger.info(f"Ensured table '{table_name}' exists (no data replaced)")
+            logger.info(f"Ensured table '{table_name}' exists")
+            
+            # Fix any datetime columns that were created as TEXT
+            fix_datetime_columns(engine, table_name)
 
         def insert() -> bool:
             df_chunk.to_sql(name=table_name, con=engine, if_exists='append', index=False)
@@ -690,6 +735,19 @@ def run(config: str) -> None:
         # Load configuration
         logger.info(f"Loading configuration from {config}")
         cfg = Config.from_file(config)
+        
+        # Ingest zones first if enabled
+        if cfg.zones.enabled:
+            logger.info("\n" + "="*60)
+            logger.info("Zones ingestion is enabled - ingesting zones first")
+            logger.info("="*60)
+            try:
+                from ingest_zones import ingest_zones
+                ingest_zones(cfg)
+                logger.info("✅ Zones ingestion completed")
+            except Exception as e:
+                logger.error(f"Zones ingestion failed: {e}")
+                logger.warning("Continuing with trip data ingestion...")
         
         # Get list of data sources to ingest
         data_sources = cfg.get_data_sources()

@@ -47,3 +47,20 @@ logging:
   
   # Log file path (optional, leave empty for console only)
   file: ""
+
+# Zones reference data (optional)
+zones:
+  # Enable zones ingestion
+  enabled: false
+  
+  # URL to zones CSV file
+  url: "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+  
+  # Table name for zones data
+  table_name: "zones"
+  
+  # Create index on LocationID for faster lookups
+  create_index: true
+  
+  # Drop existing zones table before ingestion
+  drop_existing: true

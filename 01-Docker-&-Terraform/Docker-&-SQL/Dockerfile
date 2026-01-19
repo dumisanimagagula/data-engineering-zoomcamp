@@ -1,19 +1,29 @@
 # Dockerfile for NYC Taxi Data Ingestor
-# Pre-builds dependencies to speed up container startup
+# Production-ready image with optimized layer caching
 
 FROM python:3.12-slim
 
 # Set working directory
-WORKDIR /code
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY src/ ./src/
+COPY config.yaml .
+COPY config.examples/ ./config.examples/
 
-# Default command (overridden by docker-compose)
-CMD ["python", "ingest_nyc_taxi_data.py", "--config", "config.yaml"]
+# Set Python path to include src
+ENV PYTHONPATH=/app/src:$PYTHONPATH
+
+# Default command
+CMD ["python", "src/ingest_nyc_taxi_data.py", "--config", "config.yaml"]

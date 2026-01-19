@@ -50,6 +50,16 @@ class DataSourcesConfig:
 
 
 @dataclass
+class ZonesConfig:
+    """Zones reference data configuration."""
+    enabled: bool = False
+    url: str = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+    table_name: str = "zones"
+    create_index: bool = True
+    drop_existing: bool = True
+
+
+@dataclass
 class DatabaseConfig:
     """Database configuration."""
     connection_string: str
@@ -80,6 +90,7 @@ class Config:
     database: Optional[DatabaseConfig] = None
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    zones: ZonesConfig = field(default_factory=ZonesConfig)
 
     def get_data_sources(self) -> List[DataSourceConfig]:
         """Get list of data sources to ingest.
@@ -136,8 +147,8 @@ class Config:
         if "data_sources" in data and not data_sources:
             raise ValueError("'data_sources' requires 'data_source' with defaults (base_url, taxi_type)")
         
-        if not data_source and not data_sources:
-            raise ValueError("Configuration must include either 'data_source' (with year/month) or both 'data_source' (with defaults) and 'data_sources'")
+        # Allow configs with no data sources if zones or other operations are configured
+        # This enables zones-only configurations
         
         return cls(
             data_source=data_source,
@@ -145,6 +156,7 @@ class Config:
             database=DatabaseConfig(**data["database"]),
             ingestion=IngestionConfig(**data.get("ingestion", {})),
             logging=LoggingConfig(**data.get("logging", {})),
+            zones=ZonesConfig(**data.get("zones", {})),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -163,6 +175,13 @@ class Config:
             "logging": {
                 "level": self.logging.level,
                 "file": self.logging.file,
+            },
+            "zones": {
+                "enabled": self.zones.enabled,
+                "url": self.zones.url,
+                "table_name": self.zones.table_name,
+                "create_index": self.zones.create_index,
+                "drop_existing": self.zones.drop_existing,
             },
         }
         

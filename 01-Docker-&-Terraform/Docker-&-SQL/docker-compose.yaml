@@ -7,6 +7,7 @@ services:
       POSTGRES_DB: "ny_taxi"
     volumes:
       - "ny_taxi_postgres_data:/var/lib/postgresql"
+      - "./docker-init-scripts:/docker-entrypoint-initdb.d"
     ports:
       - "5432:5432"
     # Performance tuning for bulk loads
@@ -45,9 +46,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    working_dir: /code
+    working_dir: /app
     volumes:
-      - .:/code
+      - ./src:/app/src
+      - ./config.yaml:/app/config.yaml
+      - ./config.examples:/app/config.examples
     depends_on:
       pgdatabase:
         condition: service_healthy
@@ -57,8 +60,9 @@ services:
       PG_HOST: "pgdatabase"
       PG_PORT: "5432"
       PG_DB: "ny_taxi"
+      PYTHONPATH: "/app/src"
     command: >
-      sh -lc "python ingest_nyc_taxi_data.py --config $${CONFIG_PATH:-config.yaml}"
+      sh -c "python src/ingest_nyc_taxi_data.py --config $${CONFIG_PATH:-config.yaml}"
 
 
 

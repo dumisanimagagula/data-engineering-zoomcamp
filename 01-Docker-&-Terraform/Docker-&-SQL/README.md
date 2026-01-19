@@ -1,41 +1,117 @@
-# NYC Yellow Taxi Ingestion
+# NYC Taxi Data Ingestion Pipeline
 
-This is a configuration-driven ingestion pipeline that loads NYC Yellow Taxi data into PostgreSQL. Instead of passing command-line arguments, you modify a single YAML configuration file to control what data gets ingested.
+Production-ready, config-driven data ingestion pipeline for NYC Yellow Taxi trip data and zone reference data into PostgreSQL.
 
-## Two Ingestion Modes
+## Features
 
-### 1. Single Month (Default)
-Ingest one month at a time:
+- ✅ **Config-Driven**: All settings in YAML - no hardcoded values
+- ✅ **Batch Processing**: Ingest single or multiple months in one run
+- ✅ **Zone Integration**: Automatic zones reference data ingestion
+- ✅ **High Performance**: Optimized with PostgreSQL COPY and chunked processing
+- ✅ **Docker Ready**: Containerized with Docker Compose orchestration
+- ✅ **Production Ready**: Clean structure, comprehensive documentation
+
+## Quick Start
+
+### 1. Start Services
 ```bash
-python ingest_nyc_taxi_data.py
+docker compose up -d pgdatabase pgadmin
 ```
 
-### 2. Batch Multiple Months (New!)
-Ingest multiple months/years in one run:
-```bash
-python ingest_nyc_taxi_data.py --config config.examples/batch_2021_full_year.yaml
+### 2. Configure Ingestion
+
+Edit `config.yaml` or use existing examples:
+
+```yaml
+# Single month
+data_source:
+  year: 2021
+  month: 1
+  taxi_type: yellow
+
+# Enable zones (optional)
+zones:
+  enabled: true
 ```
 
-See [BATCH_INGESTION.md](BATCH_INGESTION.md) for details.
+### 3. Run Ingestion
 
-## Configuration-Driven Approach
+```bash
+# Default config
+docker compose run --rm ingestor
 
-The entire pipeline is controlled by configuration files: **`config.yaml`** or **`config_batch.yaml`**
+# Specific config
+docker compose run --rm -e CONFIG_PATH=config.examples/batch_2021_q1.yaml ingestor
 
-### Quick Start: Ingest Different Data
+# Zones only
+docker compose run --rm -e CONFIG_PATH=config.examples/zones_only.yaml ingestor python src/ingest_zones.py
+```
 
-**Single Month:**
+## Project Structure
+
+```
+├── src/                          # Source code
+│   ├── ingest_nyc_taxi_data.py  # Main ingestion script
+│   ├── ingest_zones.py          # Zones ingestion script
+│   └── config_loader.py         # Configuration parser
+├── config.examples/             # Example configurations
+│   ├── batch_2021_q1.yaml       # Q1 2021 batch
+│   ├── batch_2021_full_year.yaml # Full year 2021
+│   ├── batch_2025_full_year.yaml # Full year 2025
+│   ├── with_zones.yaml          # Single month + zones
+│   └── zones_only.yaml          # Zones only
+├── docs/                        # Documentation
+│   ├── BATCH_INGESTION.md       # Batch processing guide
+│   ├── CONFIGURATION.md         # Configuration reference
+│   ├── CONFIG_EXAMPLES.md       # Config examples
+│   ├── ZONES_README.md          # Zones data guide
+│   └── QUICK_REFERENCE.md       # Command reference
+├── scripts/                     # Utility scripts
+│   ├── verify_zones.py          # Verify zones data
+│   ├── example_zones_join.py    # Example queries
+│   └── test_config_driven.py    # Integration test
+├── docker-init-scripts/         # PostgreSQL init scripts
+├── config.yaml                  # Default configuration
+├── docker-compose.yaml          # Docker orchestration
+├── Dockerfile                   # Production image
+└── requirements.txt             # Python dependencies
+```
+
+## Configuration
+
+### Basic Configuration
+
+```yaml
+# Data source
+data_source:
+  year: 2021
+  month: 1
+  base_url: "https://d37ci6vzurychx.cloudfront.net/trip-data"
+  taxi_type: yellow
+
+# Database
+database:
+  connection_string: "postgresql://root:root@pgdatabase:5432/ny_taxi"
+  table_name: "yellow_tripdata"
+
+# Ingestion
+ingestion:
+  chunk_size: 250000
+  drop_existing: false
+  if_exists: "replace"
+
+# Zones (optional)
+zones:
+  enabled: true
+  table_name: "zones"
+  create_index: true
+```
+
+### Batch Ingestion
+
 ```yaml
 data_source:
-  year: 2021        # ← Change year here
-  month: 1          # ← Change month here (1-12)
-  taxi_type: yellow # ← or change taxi type
-```
-
-**Multiple Months:**
-```yaml
-data_source:
-  base_url: "https://..."
+  base_url: "https://d37ci6vzurychx.cloudfront.net/trip-data"
   taxi_type: yellow
 
 data_sources:
@@ -47,158 +123,109 @@ data_sources:
     month: 3
 ```
 
-Then run:
+See [docs/CONFIG_EXAMPLES.md](docs/CONFIG_EXAMPLES.md) for more examples.
+
+## Usage Examples
+
+### Ingest Single Month
 ```bash
-python ingest_nyc_taxi_data.py
+docker compose run --rm ingestor
 ```
 
-Or with Docker Compose (prebuilt image + one-off runs):
+### Ingest Q1 2021
 ```bash
-# Build the ingestor image once
-docker compose build ingestor
-
-# Keep DB and pgAdmin running
-docker compose up -d pgdatabase pgadmin
-
-# Run ingestion with default config (config.yaml)
-docker compose run --rm ingestor
-
-# Run ingestion with a specific config
 docker compose run --rm -e CONFIG_PATH=config.examples/batch_2021_q1.yaml ingestor
 ```
 
-That's it! No more command-line arguments to remember.
-
-## Configuration File Structure
-
-`config.yaml` contains all settings:
-
-```yaml
-# Data source configuration (single month)
-data_source:
-  year: 2021                    # Year to ingest
-  month: 1                      # Month (1-12)
-  base_url: "https://d37ci6..."# Base URL for taxi data
-```
-
-# Database configuration
-database:
-  connection_string: "postgresql://root:root@localhost:5432/ny_taxi"
-  table_name: "yellow_tripdata" # Table name
-
-# Ingestion parameters
-ingestion:
-  chunk_size: 250000           # Rows per batch (optimized)
-  n_jobs: 1                    # Parallel jobs (future)
-  drop_existing: false         # Drop table first?
-  if_exists: "replace"         # replace or append
-
-# Logging
-logging:
-  level: "INFO"                # Log level
-  file: ""                     # Log file path (optional)
-```
-
-## Run Locally
-1) Install deps (prefer venv):
+### Ingest Full Year 2025
 ```bash
+docker compose run --rm -e CONFIG_PATH=config.examples/batch_2025_full_year.yaml ingestor
+```
+
+### Ingest Zones Only
+```bash
+docker compose run --rm -e CONFIG_PATH=config.examples/zones_only.yaml ingestor python src/ingest_zones.py
+```
+
+### Verify Zones Data
+```bash
+docker compose run --rm ingestor python scripts/verify_zones.py
+```
+
+## Access Services
+
+- **pgAdmin**: http://localhost:8085
+  - Email: admin@admin.com
+  - Password: root
+
+- **PostgreSQL**: localhost:5432
+  - User: root
+  - Password: root
+  - Database: ny_taxi
+
+## Performance
+
+- **Chunk Size**: 250,000 rows per batch (optimized for COPY)
+- **Method**: PostgreSQL COPY for high-speed bulk inserts
+- **Indexing**: Automatic index creation after ingestion
+- **Schema Fixes**: Automatic datetime column type conversion
+
+## Data Sources
+
+- **Trip Data**: https://d37ci6vzurychx.cloudfront.net/trip-data/
+- **Zones Data**: https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv
+
+## Documentation
+
+- [BATCH_INGESTION.md](docs/BATCH_INGESTION.md) - Batch processing guide
+- [CONFIGURATION.md](docs/CONFIGURATION.md) - Advanced configuration
+- [ZONES_README.md](docs/ZONES_README.md) - Zones reference data
+- [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) - Command quick reference
+
+## Requirements
+
+- Docker & Docker Compose
+- 2GB+ RAM for database
+- Network access to data sources
+
+## Development
+
+### Local Setup
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Run locally (update connection string in config.yaml)
+python src/ingest_nyc_taxi_data.py --config config.yaml
 ```
 
-2) Edit `config.yaml` to choose year/month
-
-3) Run ingestion:
+### Rebuild Image
 ```bash
-python ingest_nyc_taxi_data.py
-```
-
-4) Or specify a different config file:
-```bash
-python ingest_nyc_taxi_data.py --config path/to/config.yaml
-```
-
-5) Run tests:
-```bash
-pytest
-```
-
-## Run with Docker Compose
-Brings up PostgreSQL and pgAdmin, and supports on-demand ingestion runs:
-
-```bash
-# Build ingestor once
 docker compose build ingestor
-
-# Start core services
-docker compose up -d pgdatabase pgadmin
-
-# Run ingestion with default config
-docker compose run --rm ingestor
-
-# Run ingestion with a specific config
-docker compose run --rm -e CONFIG_PATH=config.examples/prod.yaml ingestor
 ```
 
-The ingestor reads `CONFIG_PATH` (defaulting to `config.yaml`) at runtime.
+## Troubleshooting
 
-pgAdmin: http://localhost:8085 (email `admin@admin.com`, password `root`).
-
-## Advantages of Configuration-Driven Design
-- **Single source of truth**: All parameters in one file
-- **No CLI argument confusion**: No need to remember flags or defaults
-- **Easy templating**: Copy and modify config.yaml for different scenarios
-- **Reproducibility**: Config file documents exactly what was ingested
-- **Version control friendly**: Track config changes in git
-- **Extensibility**: Easy to add new parameters without CLI changes
-
-## Data Source & Engine
-- Files: `https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month:02d}.parquet`
-- Key columns: `VendorID`, `passenger_count`, `trip_distance`, `PULocationID`, `DOLocationID`, `fare_amount`, `tip_amount`, `total_amount`, `tpep_pickup_datetime`, `tpep_dropoff_datetime`, etc.
-- Parquet files are read via Polars (fast, vectorized); CSV fallback converts to Polars.
-- Data is inserted using PostgreSQL COPY via `psycopg2` (much faster than `pandas.to_sql`).
-- Schema is inferred from Polars dtypes; table is created on the first chunk.
-
-## Example Workflows
-
-### Single Month Workflows
-
-**Ingest 2020 December data:**
-```yaml
-data_source:
-  year: 2020
-  month: 12
-database:
-  table_name: "yellow_tripdata_2020_12"
-```
-
-**Append to existing table instead of replacing:**
-```yaml
-ingestion:
-  if_exists: "append"
-```
-
-**Increase chunk size for faster ingestion:**
-```yaml
-ingestion:
-  chunk_size: 500000
-```
-
-### Batch Workflows (Multiple Months)
-
-**Load Q1 2021:**
+### Schema Mismatch
+If ingesting different years with different schemas:
 ```bash
-python ingest_nyc_taxi_data.py --config config.examples/batch_2021_q1.yaml
+# Clean database
+docker compose down -v
+
+# Run ingestion
+docker compose run --rm -e CONFIG_PATH=your_config.yaml ingestor
 ```
 
-**Load full year 2021:**
+### Check Logs
 ```bash
-python ingest_nyc_taxi_data.py --config config.examples/batch_2021_full_year.yaml
+docker compose logs pgdatabase
+docker compose logs ingestor
 ```
 
-**Load multiple years:**
-```bash
-python ingest_nyc_taxi_data.py --config config.examples/batch_multi_year.yaml
-```
+## License
 
-See [BATCH_INGESTION.md](BATCH_INGESTION.md) for more batch examples and configuration details.
-````
+MIT
