@@ -524,7 +524,7 @@ def create_table_from_polars(cursor, table_name: str, df: pl.DataFrame) -> None:
     cursor.execute(create_stmt)
 
 
-def fix_datetime_columns(engine: Engine, table_name: str) -> None:
+def fix_datetime_columns(engine: Engine, table_name: str, datetime_columns: list[str] | None = None) -> None:
     """
     Fix datetime columns that were created as TEXT type and convert them to TIMESTAMP.
     This handles cases where SQLAlchemy's type inference creates wrong types.
@@ -532,8 +532,10 @@ def fix_datetime_columns(engine: Engine, table_name: str) -> None:
     Args:
         engine: SQLAlchemy engine
         table_name: Target table name
+        datetime_columns: List of datetime column names to fix (default: yellow taxi columns)
     """
-    datetime_columns = ['tpep_pickup_datetime', 'tpep_dropoff_datetime']
+    if datetime_columns is None:
+        datetime_columns = ['tpep_pickup_datetime', 'tpep_dropoff_datetime']
     
     try:
         with engine.begin() as conn:
@@ -585,7 +587,7 @@ def insert_chunk_to_database(df_chunk: pd.DataFrame, engine: Engine, table_name:
             logger.info(f"Ensured table '{table_name}' exists")
             
             # Fix any datetime columns that were created as TEXT
-            fix_datetime_columns(engine, table_name)
+            fix_datetime_columns(engine, table_name, parse_dates)
 
         def insert() -> bool:
             df_chunk.to_sql(name=table_name, con=engine, if_exists='append', index=False)
@@ -606,7 +608,7 @@ def insert_chunk_to_database(df_chunk: pd.DataFrame, engine: Engine, table_name:
         raise click.ClickException("Database error during insertion")
 
 
-def cleanup_existing_partition(engine: Engine, table_name: str, year: int, month: int) -> None:
+def cleanup_existing_partition(engine: Engine, table_name: str, year: int, month: int, pickup_datetime_col: str = "tpep_pickup_datetime") -> None:
     """Remove existing rows for the target month to avoid duplicates on reruns."""
     # Compute month start/end in Python to avoid SQL casting issues
     month_start_dt = datetime(year, month, 1)
@@ -623,8 +625,8 @@ def cleanup_existing_partition(engine: Engine, table_name: str, year: int, month
         delete_stmt = text(
             f"""
             DELETE FROM {table_name}
-            WHERE tpep_pickup_datetime >= :start
-              AND tpep_pickup_datetime < :end
+            WHERE {pickup_datetime_col}::timestamp >= :start
+              AND {pickup_datetime_col}::timestamp < :end
             """
         )
 
@@ -662,7 +664,9 @@ def create_indexes(engine: Engine, table_name: str) -> None:
 
         targets = [
             "tpep_pickup_datetime",
+            "lpep_pickup_datetime",
             "tpep_dropoff_datetime",
+            "lpep_dropoff_datetime",
             "PULocationID",
             "DOLocationID",
         ]
@@ -691,6 +695,58 @@ def create_indexes(engine: Engine, table_name: str) -> None:
         logger.error(f"Failed to create indexes: {e}")
         raise click.ClickException("Failed to create database indexes")
 
+def get_schema_for_taxi_type(taxi_type: str) -> tuple[dict[str, str], list[str]]:
+    """
+    Get dtype and parse_dates for different taxi types.
+    
+    Args:
+        taxi_type: Type of taxi (yellow, green, fhv)
+        
+    Returns:
+        Tuple of (dtype dict, parse_dates list)
+    """
+    common_dtype = {
+        "VendorID": "Int64",
+        "passenger_count": "Int64",
+        "trip_distance": "float64",
+        "RatecodeID": "Int64",
+        "store_and_fwd_flag": "string",
+        "PULocationID": "Int64",
+        "DOLocationID": "Int64",
+        "payment_type": "Int64",
+        "fare_amount": "float64",
+        "extra": "float64",
+        "mta_tax": "float64",
+        "tip_amount": "float64",
+        "tolls_amount": "float64",
+        "improvement_surcharge": "float64",
+        "total_amount": "float64",
+    }
+    
+    if taxi_type.lower() == "yellow":
+        dtype = {**common_dtype, "congestion_surcharge": "float64"}
+        parse_dates = ["tpep_pickup_datetime", "tpep_dropoff_datetime"]
+    elif taxi_type.lower() == "green":
+        dtype = {**common_dtype, "congestion_surcharge": "float64"}
+        parse_dates = ["lpep_pickup_datetime", "lpep_dropoff_datetime"]
+    elif taxi_type.lower() == "fhv":
+        dtype = {
+            "dispatching_base_num": "string",
+            "pickup_datetime": "object",
+            "dropOff_datetime": "object",
+            "PULocationID": "Int64",
+            "DOlocationID": "Int64",
+            "SR_Flag": "string",
+            "Affiliated_base_number": "string",
+        }
+        parse_dates = ["pickup_datetime", "dropOff_datetime"]
+    else:
+        raise ValueError(f"Unknown taxi type: {taxi_type}")
+    
+    return dtype, parse_dates
+
+
+# Default to yellow if not specified
 dtype = {
     "VendorID": "Int64",
     "passenger_count": "Int64",
@@ -735,6 +791,11 @@ def run(config: str) -> None:
         # Load configuration
         logger.info(f"Loading configuration from {config}")
         cfg = Config.from_file(config)
+        
+        # Get the appropriate schema for the taxi type
+        global dtype, parse_dates
+        dtype, parse_dates = get_schema_for_taxi_type(cfg.data_source.taxi_type)
+        logger.info(f"Using schema for {cfg.data_source.taxi_type} taxi data")
         
         # Ingest zones first if enabled
         if cfg.zones.enabled:
@@ -783,7 +844,9 @@ def run(config: str) -> None:
 
             # Cleanup existing data for the same partition to avoid duplicates on reruns
             logger.info("Removing existing data for target month to prevent duplicates...")
-            cleanup_existing_partition(engine, cfg.database.table_name, data_source.year, data_source.month)
+            # Get the pickup datetime column name based on taxi type
+            pickup_col = parse_dates[0]  # First datetime column is always pickup
+            cleanup_existing_partition(engine, cfg.database.table_name, data_source.year, data_source.month, pickup_col)
             
             # Fetch data in chunks
             logger.info("Fetching data from URL...")

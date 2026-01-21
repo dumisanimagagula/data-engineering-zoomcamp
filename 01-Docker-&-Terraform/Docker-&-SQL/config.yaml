@@ -4,16 +4,16 @@
 # Data source configuration
 data_source:
   # Year to ingest
-  year: 2021
+  year: 2025
   
   # Month to ingest (1-12)
-  month: 1
+  month: 11
   
   # Base URL for taxi data
   base_url: "https://d37ci6vzurychx.cloudfront.net/trip-data"
   
   # Type of taxi data: yellow, green, or fhv
-  taxi_type: yellow
+  taxi_type: green
 
 # Database configuration
 database:
@@ -22,7 +22,7 @@ database:
   connection_string: "postgresql://root:root@pgdatabase:5432/ny_taxi"
   
   # Table name
-  table_name: "yellow_tripdata"
+  table_name: "green_trip_data"
 
 # Ingestion parameters
 ingestion:
@@ -51,7 +51,7 @@ logging:
 # Zones reference data (optional)
 zones:
   # Enable zones ingestion
-  enabled: false
+  enabled: true
   
   # URL to zones CSV file
   url: "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
